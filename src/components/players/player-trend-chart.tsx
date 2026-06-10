@@ -67,9 +67,9 @@ export function PlayerTrendChart({ snapshots }: PlayerTrendChartProps) {
                     borderRadius: 8,
                   }}
                   labelFormatter={(value) => formatRelativeTime(String(value))}
-                  formatter={(value: number, name: string) => [
-                    formatNumber(value),
-                    name,
+                  formatter={(value, name) => [
+                    formatNumber(Number(value ?? 0)),
+                    String(name),
                   ]}
                 />
                 <Line
