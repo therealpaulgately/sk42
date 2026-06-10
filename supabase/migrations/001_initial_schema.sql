@@ -44,6 +44,7 @@ create table public.tracked_players (
   display_name text,
   server integer not null,
   alliance_id uuid references public.alliances (id) on delete set null,
+  discord_handle text,
   is_pinned boolean not null default false,
   watchlist_state public.watchlist_state not null default 'none',
   notes text,

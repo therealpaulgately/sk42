@@ -1,9 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import type {
+  ActivityEvent,
   PlayerDetail,
   PlayerSearchResult,
   PlayerSearchSource,
   PlayerSnapshot,
+  PlayerTag,
   TrackedPlayer,
 } from "@/types/database";
 import { DEFAULT_SERVER } from "@/types/database";
@@ -77,6 +79,7 @@ const demoPlayers: PlayerSearchResult[] = [
     displayName: "Iron Fox",
     server: 42,
     allianceName: "SK42",
+    discordHandle: "@ironfox",
     isPinned: true,
     watchlistState: "watch",
     notes: "Frequent mover",
@@ -92,6 +95,7 @@ const demoPlayers: PlayerSearchResult[] = [
     displayName: "Night Owl",
     server: 42,
     allianceName: "SK42",
+    discordHandle: "@nightowl",
     isPinned: false,
     watchlistState: "none",
     notes: null,
@@ -107,6 +111,7 @@ const demoPlayers: PlayerSearchResult[] = [
     displayName: "General K",
     server: 42,
     allianceName: "Raven",
+    discordHandle: "@generalk",
     isPinned: false,
     watchlistState: "flagged",
     notes: "Watch for alliance swap",
@@ -133,6 +138,7 @@ function buildPlayerSearchResult(
   deaths: number | null,
   rank: number | null,
   allianceName: string | null,
+  discordHandle: string | null,
   isPinned: boolean,
   watchlistState: "none" | "watch" | "flagged",
   notes: string | null,
@@ -143,6 +149,7 @@ function buildPlayerSearchResult(
     displayName: displayName ?? pid,
     server,
     allianceName,
+    discordHandle,
     isPinned,
     watchlistState,
     notes,
@@ -187,6 +194,7 @@ function mergeResults(
       row.deaths,
       row.rank,
       row.alliance_name,
+      tracked?.discord_handle ?? null,
       tracked?.is_pinned ?? false,
       tracked?.watchlist_state ?? "none",
       tracked?.notes ?? null,
@@ -206,6 +214,7 @@ function mergeResults(
         {
           ...current,
           displayName: tracked.display_name ?? current.displayName,
+          discordHandle: tracked.discord_handle,
           isPinned: tracked.is_pinned,
           watchlistState: tracked.watchlist_state,
           notes: tracked.notes,
@@ -227,6 +236,7 @@ function mergeResults(
         null,
         null,
         null,
+        tracked.discord_handle,
         tracked.is_pinned,
         tracked.watchlist_state,
         tracked.notes,
@@ -254,7 +264,8 @@ function filterDemo(query: string, server: number): PlayerSearchResult[] {
         (!term ||
           player.pid.includes(term) ||
           player.displayName.toLowerCase().includes(term) ||
-          (player.allianceName ?? "").toLowerCase().includes(term))
+          (player.allianceName ?? "").toLowerCase().includes(term) ||
+          (player.discordHandle ?? "").toLowerCase().includes(term))
     )
     .slice(0, 25);
 }
@@ -288,7 +299,9 @@ export async function searchPlayers({
 
     const trackedQuery = supabase
       .from("tracked_players")
-      .select("pid, display_name, server, alliance_id, is_pinned, watchlist_state, notes")
+      .select(
+        "pid, display_name, server, alliance_id, discord_handle, is_pinned, watchlist_state, notes"
+      )
       .eq("server", server)
       .limit(term ? 50 : 25);
 
@@ -353,14 +366,17 @@ export async function getPlayerDetail({
       displayName: demo.displayName,
       server: demo.server,
       allianceName: demo.allianceName,
+      discordHandle: demo.discordHandle ?? "@demo",
       isPinned: demo.isPinned,
       watchlistState: demo.watchlistState,
       notes: demo.notes,
+      tags: ["demo", "sample"],
       latestSnapshotAt: demo.latestSnapshotAt,
       source: "demo",
       snapshots: demoSnapshots.filter(
         (snapshot) => snapshot.pid === demo.pid && snapshot.server === server
       ),
+      activity: [],
     };
   }
 
@@ -369,7 +385,9 @@ export async function getPlayerDetail({
     const [trackedRes, snapshotRes] = await Promise.all([
       supabase
         .from("tracked_players")
-        .select("pid, display_name, server, is_pinned, watchlist_state, notes")
+        .select(
+          "id, pid, display_name, server, is_pinned, watchlist_state, notes, alliance_id, discord_handle"
+        )
         .eq("pid", normalizedPid)
         .eq("server", server)
         .maybeSingle(),
@@ -391,7 +409,15 @@ export async function getPlayerDetail({
     const tracked = trackedRes.data as
       | Pick<
           TrackedPlayer,
-          "pid" | "display_name" | "server" | "is_pinned" | "watchlist_state" | "notes"
+          | "id"
+          | "pid"
+          | "display_name"
+          | "server"
+          | "is_pinned"
+          | "watchlist_state"
+          | "notes"
+          | "alliance_id"
+          | "discord_handle"
         >
       | null;
 
@@ -400,18 +426,49 @@ export async function getPlayerDetail({
     }
 
     const latest = snapshots[0];
+    let allianceName = latest?.alliance_name ?? null;
+    let tags: string[] = [];
+    if (tracked?.alliance_id) {
+      const { data: alliance } = await supabase
+        .from("alliances")
+        .select("name")
+        .eq("id", tracked.alliance_id)
+        .maybeSingle();
+      allianceName = alliance?.name ?? allianceName;
+    }
+
+    if (tracked?.id) {
+      const { data: tagRows } = await supabase
+        .from("player_tags")
+        .select("id, tracked_player_id, tag, created_by, created_at")
+        .eq("tracked_player_id", tracked.id)
+        .order("tag", { ascending: true });
+      tags = ((tagRows ?? []) as PlayerTag[]).map((row) => row.tag);
+    }
+
+    const { data: recentActivity } = await supabase
+      .from("activity_events")
+      .select("id, event_type, summary, actor_id, metadata, created_at")
+      .order("created_at", { ascending: false })
+      .limit(25);
+    const activity = ((recentActivity ?? []) as ActivityEvent[]).filter(
+      (event) => (event.metadata as { pid?: string } | null | undefined)?.pid === normalizedPid
+    );
 
     return {
       pid: normalizedPid,
       displayName: tracked?.display_name ?? latest?.display_name ?? normalizedPid,
       server,
-      allianceName: latest?.alliance_name ?? null,
+      allianceName,
+      discordHandle: tracked?.discord_handle ?? null,
       isPinned: tracked?.is_pinned ?? false,
       watchlistState: tracked?.watchlist_state ?? "none",
       notes: tracked?.notes ?? null,
+      tags,
       latestSnapshotAt: latest?.captured_at ?? null,
       source: "database",
       snapshots,
+      activity,
     };
   } catch {
     return null;

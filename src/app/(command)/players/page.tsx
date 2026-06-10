@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { DEFAULT_SERVER } from "@/types/database";
 import { formatNumber, formatRelativeTime } from "@/lib/utils";
 import { searchPlayers } from "@/lib/data/players";
+import { PlayerSearchRowActions } from "@/components/players/player-search-row-actions";
 
 export default async function PlayersPage({
   searchParams,
@@ -17,6 +18,9 @@ export default async function PlayersPage({
   const serverValue = Number(params.server);
   const server = Number.isFinite(serverValue) && serverValue > 0 ? serverValue : DEFAULT_SERVER;
   const { players, source } = await searchPlayers({ query, server, limit: 25 });
+  const editable = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
 
   return (
     <div className="space-y-4">
@@ -82,7 +86,8 @@ export default async function PlayersPage({
                     <th className="pb-2 pr-3 font-medium">Score</th>
                     <th className="pb-2 pr-3 font-medium">Kills</th>
                     <th className="pb-2 pr-3 font-medium">Rank</th>
-                    <th className="pb-2 font-medium">State</th>
+                    <th className="pb-2 pr-3 font-medium">State</th>
+                    <th className="pb-2 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -132,6 +137,9 @@ export default async function PlayersPage({
                             {player.notes}
                           </p>
                         ) : null}
+                      </td>
+                      <td className="py-3">
+                        <PlayerSearchRowActions player={player} editable={editable} />
                       </td>
                     </tr>
                   ))}

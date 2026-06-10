@@ -4,6 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DEFAULT_SERVER } from "@/types/database";
 import { formatNumber, formatRelativeTime } from "@/lib/utils";
+import { PlayerTrackerActions } from "@/components/players/player-tracker-actions";
+import { PlayerTrendChart } from "@/components/players/player-trend-chart";
+import { getAllianceOptions } from "@/lib/data/alliances";
 import { getPlayerDetail } from "@/lib/data/players";
 
 export default async function PlayerDetailPage({
@@ -17,7 +20,13 @@ export default async function PlayerDetailPage({
   const paramsSearch = await searchParams;
   const serverValue = Number(paramsSearch.server);
   const server = Number.isFinite(serverValue) && serverValue > 0 ? serverValue : DEFAULT_SERVER;
-  const player = await getPlayerDetail({ pid, server });
+  const editable = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+  const [player, alliances] = await Promise.all([
+    getPlayerDetail({ pid, server }),
+    getAllianceOptions(server),
+  ]);
 
   if (!player) {
     return (
@@ -55,6 +64,7 @@ export default async function PlayerDetailPage({
               </div>
               <p className="text-sm text-muted-foreground">
                 {player.allianceName ? `Alliance ${player.allianceName}` : "No alliance recorded yet"}
+                {player.discordHandle ? ` · ${player.discordHandle}` : ""}
                 {player.latestSnapshotAt ? ` · Updated ${formatRelativeTime(player.latestSnapshotAt)}` : ""}
               </p>
             </div>
@@ -70,6 +80,15 @@ export default async function PlayerDetailPage({
               {player.source === "demo" ? <Badge variant="secondary">Demo</Badge> : null}
             </div>
           </div>
+          {player.tags.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {player.tags.map((tag) => (
+                <Badge key={tag} variant="outline">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
           {player.notes ? (
             <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
               {player.notes}
@@ -114,9 +133,47 @@ export default async function PlayerDetailPage({
         </CardContent>
       </Card>
 
+      <PlayerTrackerActions player={player} alliances={alliances} editable={editable} />
+
+      <PlayerTrendChart snapshots={player.snapshots} />
+
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle>Recent changes</CardTitle>
+          <Badge variant="outline">{player.activity.length} events</Badge>
+        </CardHeader>
+        <CardContent>
+          {player.activity.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No recent updates logged for this player yet.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {player.activity.map((event) => (
+                <div
+                  key={event.id}
+                  className="flex items-start justify-between gap-3 rounded-md border border-border px-3 py-2"
+                >
+                  <div className="space-y-1">
+                    <p className="text-sm">{event.summary}</p>
+                    <Badge variant="secondary" className="w-fit">
+                      {event.event_type.replace(/_/g, " ")}
+                    </Badge>
+                  </div>
+                  <time className="shrink-0 text-xs text-muted-foreground">
+                    {formatRelativeTime(event.created_at)}
+                  </time>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle>Snapshot history</CardTitle>
+          <Badge variant="outline">{player.snapshots.length} snapshots</Badge>
         </CardHeader>
         <CardContent>
           {player.snapshots.length === 0 ? (
@@ -163,21 +220,6 @@ export default async function PlayerDetailPage({
               </table>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Tracker actions</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Pinning, alliance assignment, notes, and title management are the next
-            interaction layer on top of this read-only detail view.
-          </p>
-          <Button asChild variant="outline">
-            <Link href={`/players?server=${server}`}>Back to search</Link>
-          </Button>
         </CardContent>
       </Card>
     </div>

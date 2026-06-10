@@ -17,6 +17,7 @@ export interface TrackedPlayer {
   display_name: string | null;
   server: number;
   alliance_id: string | null;
+  discord_handle: string | null;
   is_pinned: boolean;
   watchlist_state: "none" | "watch" | "flagged";
   notes: string | null;
@@ -88,6 +89,14 @@ export interface WatchlistMover {
   allianceChanged: boolean;
 }
 
+export interface PlayerTag {
+  id: string;
+  tracked_player_id: string;
+  tag: string;
+  created_by: string | null;
+  created_at: string;
+}
+
 export type PlayerSearchSource = "database" | "demo";
 
 export interface PlayerSearchResult {
@@ -95,6 +104,7 @@ export interface PlayerSearchResult {
   displayName: string;
   server: number;
   allianceName: string | null;
+  discordHandle: string | null;
   isPinned: boolean;
   watchlistState: "none" | "watch" | "flagged";
   notes: string | null;
@@ -111,12 +121,15 @@ export interface PlayerDetail {
   displayName: string;
   server: number;
   allianceName: string | null;
+  discordHandle: string | null;
   isPinned: boolean;
   watchlistState: "none" | "watch" | "flagged";
   notes: string | null;
+  tags: string[];
   latestSnapshotAt: string | null;
   source: PlayerSearchSource;
   snapshots: PlayerSnapshot[];
+  activity: ActivityEvent[];
 }
 
 export interface SyncRunSummary {
