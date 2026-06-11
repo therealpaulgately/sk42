@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Bell, RefreshCw, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,16 +31,18 @@ export function TopBar({ title, subtitle }: TopBarProps) {
         </div>
 
         <Badge variant="secondary" className="hidden sm:inline-flex">
-          Sync: pending setup
+          Sync: manual
         </Badge>
 
         <Button variant="ghost" size="icon" aria-label="Notifications">
           <Bell className="size-4" />
         </Button>
 
-        <Button variant="outline" size="sm" className="hidden sm:inline-flex">
-          <RefreshCw className="size-3.5" />
-          Sync
+        <Button variant="outline" size="sm" className="hidden sm:inline-flex" asChild>
+          <Link href="/admin">
+            <RefreshCw className="size-3.5" />
+            Sync
+          </Link>
         </Button>
       </div>
     </header>

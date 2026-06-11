@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { hasMinimumRole } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -21,16 +20,6 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (!hasMinimumRole(profile?.role, "officer")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   let server = DEFAULT_SERVER;
