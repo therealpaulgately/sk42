@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   const runId = syncRun.data.id;
 
   try {
-    const { pages } = await fetchAllRankingPages({ server, pageSize: 100, maxPages: 25 });
+    const { pages } = await fetchAllRankingPages({ server, pageSize: 500, maxPages: 25 });
     const capturedAt = new Date().toISOString();
     const rowsByPid = new Map<string, { row: RawRankingRow; page: number }>();
 

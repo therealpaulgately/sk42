@@ -7,9 +7,17 @@ const RANKING_ENDPOINT =
   process.env.WARPATH_RANKING_URL ??
   "https://yx.dmzgame.com/intl_warpath/rank_pid";
 
+const RANKING_LATEST_DAY_ENDPOINT =
+  process.env.WARPATH_LATEST_DAY_URL ??
+  "https://yx.dmzgame.com/intl_warpath/latest_day";
+
 export interface RankingRequest {
   server: number;
   rank?: string;
+  day?: number;
+  ccid?: number;
+  isBenfu?: number;
+  isQuanfu?: number;
   page?: number;
   pageSize?: number;
 }
@@ -32,6 +40,29 @@ export interface RankingPageResult {
 
 export interface RankingPageRecord extends RankingPageResult {
   page: number;
+}
+
+export async function fetchLatestRankingDay(server: number): Promise<number> {
+  const url = new URL(RANKING_LATEST_DAY_ENDPOINT);
+  url.searchParams.set("wid", String(server));
+
+  const response = await fetch(url.toString(), {
+    headers: { Accept: "application/json" },
+    next: { revalidate: 0 },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Latest day fetch failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const latestDay = Number(payload?.Data ?? payload?.data);
+
+  if (!Number.isInteger(latestDay) || latestDay <= 0) {
+    throw new Error("Latest day response was empty");
+  }
+
+  return latestDay;
 }
 
 export interface CommanderHistoryRow {
@@ -68,10 +99,14 @@ export async function fetchRankingPage(
   params: RankingRequest
 ): Promise<RankingPageResult> {
   const url = new URL(RANKING_ENDPOINT);
-  url.searchParams.set("server", String(params.server));
+  url.searchParams.set("wid", String(params.server));
   url.searchParams.set("rank", params.rank ?? "power");
+  url.searchParams.set("ccid", String(params.ccid ?? 0));
+  url.searchParams.set("is_benfu", String(params.isBenfu ?? 1));
+  url.searchParams.set("is_quanfu", String(params.isQuanfu ?? 0));
+  if (params.day) url.searchParams.set("day", String(params.day));
   if (params.page) url.searchParams.set("page", String(params.page));
-  if (params.pageSize) url.searchParams.set("size", String(params.pageSize));
+  url.searchParams.set("perPage", String(params.pageSize ?? 500));
 
   const response = await fetch(url.toString(), {
     headers: { Accept: "application/json" },
@@ -103,8 +138,9 @@ export async function fetchAllRankingPages(
   pages: RankingPageRecord[];
   rows: RawRankingRow[];
 }> {
-  const pageSize = params.pageSize ?? 100;
+  const pageSize = params.pageSize ?? 500;
   const maxPages = params.maxPages ?? 25;
+  const day = params.day ?? (await fetchLatestRankingDay(params.server));
   const pages: RankingPageRecord[] = [];
   const rows: RawRankingRow[] = [];
 
@@ -112,6 +148,10 @@ export async function fetchAllRankingPages(
     const result = await fetchRankingPage({
       server: params.server,
       rank: params.rank ?? "power",
+      day,
+      ccid: params.ccid ?? 0,
+      isBenfu: params.isBenfu ?? 1,
+      isQuanfu: params.isQuanfu ?? 0,
       page,
       pageSize,
     });
