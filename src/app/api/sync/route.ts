@@ -35,6 +35,28 @@ function formatError(error: unknown) {
   return "Unknown error";
 }
 
+function normalizeKills(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const total = value.reduce((sum, entry) => {
+      const numeric = typeof entry === "number" ? entry : Number(entry);
+      return Number.isFinite(numeric) ? sum + numeric : sum;
+    }, 0);
+
+    return total > 0 ? total : null;
+  }
+
+  if (typeof value === "string" && value.trim() !== "") {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  return null;
+}
+
 /**
  * Manual sync endpoint — Phase 2 foundation.
  * Production should use a cron/worker with the same service-role path.
@@ -111,7 +133,7 @@ export async function POST(request: Request) {
       display_name: row.name ? String(row.name) : null,
       captured_at: capturedAt,
       score: row.score ?? null,
-      kills: row.kills ?? null,
+      kills: normalizeKills(row.kills),
       deaths: row.deaths ?? null,
       rank: row.rank ?? null,
       alliance_name: row.alliance ? String(row.alliance) : null,

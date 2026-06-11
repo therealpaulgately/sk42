@@ -90,7 +90,7 @@ export interface CommanderHistoryRow {
   c_sumkill?: number;
   c_caiji?: number;
   powers?: Record<string, unknown>;
-  kills?: number[];
+  kills?: number[] | number;
   created_at?: string;
   [key: string]: unknown;
 }
