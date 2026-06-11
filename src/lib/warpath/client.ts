@@ -120,7 +120,9 @@ export async function fetchRankingPage(
   const payload = await response.json();
   const rows = Array.isArray(payload)
     ? payload
-    : Array.isArray(payload?.data)
+    : Array.isArray(payload?.Data)
+      ? payload.Data
+      : Array.isArray(payload?.data)
       ? payload.data
       : Array.isArray(payload?.list)
         ? payload.list
