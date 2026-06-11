@@ -18,7 +18,7 @@ export default async function AdminPage() {
         <CardContent className="space-y-3">
           <SyncButton />
           <p className="text-sm text-muted-foreground">
-            Requires Supabase credentials and{" "}
+            Select a server, then trigger a manual ranking sync. Requires Supabase credentials and{" "}
             <code className="text-data">SUPABASE_SERVICE_ROLE_KEY</code> for
             snapshot writes. Use a cron worker in production.
           </p>
