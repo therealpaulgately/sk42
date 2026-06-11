@@ -8,6 +8,33 @@ import {
 } from "@/lib/warpath/client";
 import { DEFAULT_SERVER } from "@/types/database";
 
+function formatError(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error && typeof error === "object") {
+    const candidate = error as {
+      message?: unknown;
+      details?: unknown;
+      hint?: unknown;
+    };
+
+    const parts = [candidate.message, candidate.details, candidate.hint]
+      .filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+
+    if (parts.length > 0) {
+      return parts.join(" - ");
+    }
+  }
+
+  return "Unknown error";
+}
+
 /**
  * Manual sync endpoint — Phase 2 foundation.
  * Production should use a cron/worker with the same service-role path.
@@ -93,11 +120,17 @@ export async function POST(request: Request) {
     }));
 
     if (snapshots.length > 0) {
-      const { error: insertError } = await admin
-        .from("player_snapshots")
-        .insert(snapshots);
+      const batchSize = 100;
+      for (let index = 0; index < snapshots.length; index += batchSize) {
+        const batch = snapshots.slice(index, index + batchSize);
+        const { error: insertError } = await admin
+          .from("player_snapshots")
+          .insert(batch);
 
-      if (insertError) throw insertError;
+        if (insertError) {
+          throw new Error(formatError(insertError));
+        }
+      }
     }
 
     await admin
@@ -124,7 +157,7 @@ export async function POST(request: Request) {
       syncRunId: runId,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = formatError(error);
 
     await admin
       .from("sync_runs")
