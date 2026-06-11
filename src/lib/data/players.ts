@@ -9,16 +9,20 @@ import type {
   TrackedPlayer,
 } from "@/types/database";
 import { DEFAULT_SERVER } from "@/types/database";
+import {
+  fetchCommanderHistory,
+  hashPayload,
+  type CommanderHistoryRow,
+} from "@/lib/warpath/client";
 
 const hasSupabaseConfig =
   Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
   Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-const demoSnapshots: PlayerSnapshot[] = [
+const demoSnapshotTemplates: Array<Omit<PlayerSnapshot, "server">> = [
   {
     id: "demo-snap-1",
     pid: "123456789",
-    server: 42,
     display_name: "Iron Fox",
     captured_at: "2026-06-10T18:30:00.000Z",
     score: 124300,
@@ -27,12 +31,12 @@ const demoSnapshots: PlayerSnapshot[] = [
     rank: 14,
     alliance_name: "SK42",
     raw_payload_hash: "demo-a",
+    raw_payload: null,
     created_at: "2026-06-10T18:30:00.000Z",
   },
   {
     id: "demo-snap-2",
     pid: "123456789",
-    server: 42,
     display_name: "Iron Fox",
     captured_at: "2026-06-09T18:30:00.000Z",
     score: 121900,
@@ -41,12 +45,12 @@ const demoSnapshots: PlayerSnapshot[] = [
     rank: 15,
     alliance_name: "SK42",
     raw_payload_hash: "demo-b",
+    raw_payload: null,
     created_at: "2026-06-09T18:30:00.000Z",
   },
   {
     id: "demo-snap-3",
     pid: "246810121",
-    server: 42,
     display_name: "Night Owl",
     captured_at: "2026-06-10T18:15:00.000Z",
     score: 102800,
@@ -55,12 +59,12 @@ const demoSnapshots: PlayerSnapshot[] = [
     rank: 31,
     alliance_name: "SK42",
     raw_payload_hash: "demo-c",
+    raw_payload: null,
     created_at: "2026-06-10T18:15:00.000Z",
   },
   {
     id: "demo-snap-4",
     pid: "99887766",
-    server: 42,
     display_name: "General K",
     captured_at: "2026-06-10T18:05:00.000Z",
     score: 140700,
@@ -69,15 +73,15 @@ const demoSnapshots: PlayerSnapshot[] = [
     rank: 8,
     alliance_name: "Raven",
     raw_payload_hash: "demo-d",
+    raw_payload: null,
     created_at: "2026-06-10T18:05:00.000Z",
   },
 ];
 
-const demoPlayers: PlayerSearchResult[] = [
+const demoPlayerTemplates: Array<Omit<PlayerSearchResult, "server">> = [
   {
     pid: "123456789",
     displayName: "Iron Fox",
-    server: 42,
     allianceName: "SK42",
     discordHandle: "@ironfox",
     isPinned: true,
@@ -93,7 +97,6 @@ const demoPlayers: PlayerSearchResult[] = [
   {
     pid: "246810121",
     displayName: "Night Owl",
-    server: 42,
     allianceName: "SK42",
     discordHandle: "@nightowl",
     isPinned: false,
@@ -109,7 +112,6 @@ const demoPlayers: PlayerSearchResult[] = [
   {
     pid: "99887766",
     displayName: "General K",
-    server: 42,
     allianceName: "Raven",
     discordHandle: "@generalk",
     isPinned: false,
@@ -123,6 +125,20 @@ const demoPlayers: PlayerSearchResult[] = [
     source: "demo",
   },
 ];
+
+function buildDemoSnapshots(server: number): PlayerSnapshot[] {
+  return demoSnapshotTemplates.map((snapshot) => ({
+    ...snapshot,
+    server,
+  }));
+}
+
+function buildDemoPlayers(server: number): PlayerSearchResult[] {
+  return demoPlayerTemplates.map((player) => ({
+    ...player,
+    server,
+  }));
+}
 
 function cleanQuery(value: string) {
   return value.trim();
@@ -160,6 +176,63 @@ function buildPlayerSearchResult(
     rank,
     source,
   };
+}
+
+function buildLiveSearchResult(row: {
+  pid: string | number;
+  wid?: number;
+  nick?: string;
+  gnick?: string;
+  power?: number;
+  sumkill?: number;
+  die?: number;
+  created_at?: string;
+}): PlayerSearchResult {
+  return buildPlayerSearchResult(
+    String(row.pid),
+    row.wid ?? DEFAULT_SERVER,
+    row.nick ?? String(row.pid),
+    row.created_at ?? null,
+    row.power ?? null,
+    row.sumkill ?? null,
+    row.die ?? null,
+    null,
+    row.gnick ?? null,
+    null,
+    false,
+    "none",
+    null,
+    "database"
+  );
+}
+
+function buildLiveSnapshots(rows: CommanderHistoryRow[]): PlayerSnapshot[] {
+  return rows
+    .slice()
+    .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+    .map((row, index) => ({
+      id: `live-${row.pid}-${row.wid ?? DEFAULT_SERVER}-${index}`,
+      pid: String(row.pid),
+      server: row.wid ?? DEFAULT_SERVER,
+      display_name: row.nick ?? String(row.pid),
+      captured_at: row.created_at ?? new Date().toISOString(),
+      score: row.power ?? row.score ?? null,
+      kills: row.sumkill ?? null,
+      deaths: row.die ?? null,
+      rank: null,
+      alliance_name: row.gnick ?? null,
+      raw_payload_hash: hashPayload(row),
+      raw_payload: row,
+      created_at: row.created_at ?? new Date().toISOString(),
+    }));
+}
+
+function latestLiveRow(rows: CommanderHistoryRow[], server: number) {
+  const filtered = rows.filter((row) => row.wid === server);
+  const candidates = filtered.length > 0 ? filtered : rows;
+  return candidates
+    .slice()
+    .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))[0] ?? null;
 }
 
 function mergeResults(
@@ -255,7 +328,11 @@ function mergeResults(
   });
 }
 
-function filterDemo(query: string, server: number): PlayerSearchResult[] {
+function filterDemo(
+  query: string,
+  server: number,
+  demoPlayers: PlayerSearchResult[]
+): PlayerSearchResult[] {
   const term = query.toLowerCase();
   return demoPlayers
     .filter(
@@ -280,9 +357,24 @@ export async function searchPlayers({
   limit?: number;
 }): Promise<{ players: PlayerSearchResult[]; source: PlayerSearchSource }> {
   const term = cleanQuery(query ?? "");
+  const demoPlayers = buildDemoPlayers(server);
 
   if (!hasSupabaseConfig) {
-    return { players: filterDemo(term, server).slice(0, limit), source: "demo" };
+    if (/^\d+$/.test(term)) {
+      try {
+        const history = await fetchCommanderHistory({ pid: term, server });
+        const live = latestLiveRow(history, server);
+        if (live) {
+          return { players: [buildLiveSearchResult({ ...live, pid: term })], source: "database" };
+        }
+      } catch {
+        // Fall back to demo data when live lookup is unavailable.
+      }
+    }
+    return {
+      players: filterDemo(term, server, demoPlayers).slice(0, limit),
+      source: "demo",
+    };
   }
 
   try {
@@ -343,7 +435,19 @@ export async function searchPlayers({
     // Fall through to demo data in local/dev mode.
   }
 
-  return { players: filterDemo(term, server).slice(0, limit), source: "demo" };
+  if (/^\d+$/.test(term)) {
+    try {
+      const history = await fetchCommanderHistory({ pid: term, server });
+      const live = latestLiveRow(history, server);
+      if (live) {
+        return { players: [buildLiveSearchResult({ ...live, pid: term })], source: "database" };
+      }
+    } catch {
+      // Fall back to demo data when live lookup is unavailable.
+    }
+  }
+
+  return { players: filterDemo(term, server, demoPlayers).slice(0, limit), source: "demo" };
 }
 
 export async function getPlayerDetail({
@@ -354,6 +458,8 @@ export async function getPlayerDetail({
   server?: number;
 }): Promise<PlayerDetail | null> {
   const normalizedPid = cleanQuery(pid);
+  const demoPlayers = buildDemoPlayers(server);
+  const demoSnapshots = buildDemoSnapshots(server);
 
   if (!hasSupabaseConfig) {
     const demo = demoPlayers.find(
@@ -394,7 +500,7 @@ export async function getPlayerDetail({
       supabase
         .from("player_snapshots")
         .select(
-          "pid, server, display_name, captured_at, score, kills, deaths, rank, alliance_name, raw_payload_hash, created_at"
+          "pid, server, display_name, captured_at, score, kills, deaths, rank, alliance_name, raw_payload_hash, raw_payload, created_at"
         )
         .eq("pid", normalizedPid)
         .eq("server", server)
@@ -422,7 +528,30 @@ export async function getPlayerDetail({
       | null;
 
     if (!tracked && snapshots.length === 0) {
-      return null;
+      const history = await fetchCommanderHistory({ pid: normalizedPid, server });
+      const liveRows = history.filter((row) => row.wid === server);
+      const selectedRows = liveRows.length > 0 ? liveRows : history;
+      const latestLive = latestLiveRow(selectedRows, server);
+
+      if (!latestLive) {
+        return null;
+      }
+
+      return {
+        pid: normalizedPid,
+        displayName: latestLive.nick ?? normalizedPid,
+        server,
+        allianceName: latestLive.gnick ?? null,
+        discordHandle: null,
+        isPinned: false,
+        watchlistState: "none",
+        notes: null,
+        tags: [],
+        latestSnapshotAt: latestLive.created_at ?? null,
+        source: "database",
+        snapshots: buildLiveSnapshots(selectedRows),
+        activity: [],
+      };
     }
 
     const latest = snapshots[0];
@@ -476,5 +605,5 @@ export async function getPlayerDetail({
 }
 
 export function getDemoPlayers() {
-  return demoPlayers;
+  return buildDemoPlayers(DEFAULT_SERVER);
 }

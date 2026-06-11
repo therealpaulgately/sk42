@@ -69,6 +69,7 @@ create table public.player_snapshots (
   rank integer,
   alliance_name text,
   raw_payload_hash text,
+  raw_payload jsonb,
   created_at timestamptz not null default now()
 );
 

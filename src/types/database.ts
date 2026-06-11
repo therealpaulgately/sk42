@@ -37,6 +37,7 @@ export interface PlayerSnapshot {
   rank: number | null;
   alliance_name: string | null;
   raw_payload_hash: string | null;
+  raw_payload: Record<string, unknown> | null;
   created_at: string;
 }
 

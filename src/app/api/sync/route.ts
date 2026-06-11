@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { hasMinimumRole } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchRankingPage, hashPayload } from "@/lib/warpath/client";
+import {
+  fetchAllRankingPages,
+  hashPayload,
+  type RawRankingRow,
+} from "@/lib/warpath/client";
 import { DEFAULT_SERVER } from "@/types/database";
 
 /**
@@ -32,7 +36,13 @@ export async function POST(request: Request) {
   let server = DEFAULT_SERVER;
   try {
     const body = await request.json();
-    if (body?.server) server = Number(body.server);
+    if (body?.server !== undefined && body?.server !== null && body?.server !== "") {
+      const parsedServer = Number(body.server);
+      if (!Number.isInteger(parsedServer) || parsedServer <= 0) {
+        return NextResponse.json({ error: "Invalid server" }, { status: 400 });
+      }
+      server = parsedServer;
+    }
   } catch {
     // empty body is fine
   }
@@ -65,23 +75,33 @@ export async function POST(request: Request) {
   const runId = syncRun.data.id;
 
   try {
-    const rows = await fetchRankingPage({ server });
+    const { pages } = await fetchAllRankingPages({ server, pageSize: 100, maxPages: 25 });
     const capturedAt = new Date().toISOString();
+    const rowsByPid = new Map<string, { row: RawRankingRow; page: number }>();
 
-    const snapshots = rows
-      .filter((row) => row.pid)
-      .map((row) => ({
-        pid: String(row.pid),
-        server,
-        display_name: row.name ? String(row.name) : null,
-        captured_at: capturedAt,
-        score: row.score ?? null,
-        kills: row.kills ?? null,
-        deaths: row.deaths ?? null,
-        rank: row.rank ?? null,
-        alliance_name: row.alliance ? String(row.alliance) : null,
-        raw_payload_hash: hashPayload(row),
-      }));
+    for (const pageRecord of pages) {
+      for (const row of pageRecord.rows) {
+        if (!row.pid) continue;
+        rowsByPid.set(String(row.pid), {
+          row,
+          page: pageRecord.page,
+        });
+      }
+    }
+
+    const snapshots = Array.from(rowsByPid.values()).map(({ row, page }) => ({
+      pid: String(row.pid),
+      server,
+      display_name: row.name ? String(row.name) : null,
+      captured_at: capturedAt,
+      score: row.score ?? null,
+      kills: row.kills ?? null,
+      deaths: row.deaths ?? null,
+      rank: row.rank ?? null,
+      alliance_name: row.alliance ? String(row.alliance) : null,
+      raw_payload: { page, row },
+      raw_payload_hash: hashPayload({ page, row }),
+    }));
 
     if (snapshots.length > 0) {
       const { error: insertError } = await admin
@@ -102,15 +122,16 @@ export async function POST(request: Request) {
 
     await admin.from("activity_events").insert({
       event_type: "sync_completed",
-      summary: `Ranking sync completed for server ${server} (${snapshots.length} records)`,
+      summary: `Ranking sync completed for server ${server} (${snapshots.length} records across ${pages.length} pages)`,
       actor_id: user.id,
-      metadata: { server, records: snapshots.length },
+      metadata: { server, records: snapshots.length, pages: pages.length },
     });
 
     return NextResponse.json({
       ok: true,
       server,
       records: snapshots.length,
+      pages: pages.length,
       syncRunId: runId,
     });
   } catch (error) {
